@@ -1,4 +1,3 @@
-.vs/
 Bookstore API
 A Modern Bookstore Management System
 Introduction
