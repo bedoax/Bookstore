@@ -8,39 +8,25 @@ namespace Bookstore.Data
     /// </summary>
     public class BookstoreDbContext : DbContext
     {
-        /// <summary>
-        /// Gets or sets the collection of Admin entities.
-        /// </summary>
+
         public DbSet<Admin> Admins { get; set; }
 
-        /// <summary>
-        /// Gets or sets the collection of Author entities.
-        /// </summary>
+
         public DbSet<Author> Authors { get; set; }
 
-        /// <summary>
-        /// Gets or sets the collection of Book entities.
-        /// </summary>
+
         public DbSet<Book> Books { get; set; }
 
-        /// <summary>
-        /// Gets or sets the collection of Category entities.
-        /// </summary>
+
         public DbSet<Category> Categories { get; set; }
 
-        /// <summary>
-        /// Gets or sets the collection of Customer entities.
-        /// </summary>
+
         public DbSet<Customer> Customers { get; set; }
 
-        /// <summary>
-        /// Gets or sets the collection of OrderHistory entities.
-        /// </summary>
+
         public DbSet<OrderHistory> OrderHistories { get; set; }
 
-        /// <summary>
-        /// Gets or sets the collection of Review entities.
-        /// </summary>
+        public DbSet<OrderDetail>OrderDetails { get; set; }
         public DbSet<Review> Reviews { get; set; }
 
         /// <summary>
@@ -62,6 +48,7 @@ namespace Bookstore.Data
             modelBuilder.Entity<Category>().ToTable("Categories").HasKey(x => x.Id);
             modelBuilder.Entity<Customer>().ToTable("Customers").HasKey(x => x.Id);
             modelBuilder.Entity<OrderHistory>().ToTable("OrderHistory").HasKey(x => x.Id);
+            modelBuilder.Entity<OrderDetail>().ToTable("OrderDetails").HasKey(x => x.Id);
             modelBuilder.Entity<Review>().ToTable("Reviews").HasKey(x => x.Id);
             modelBuilder.Entity<Author>().ToTable("Authors").HasKey(x => x.Id);
             modelBuilder.Entity<Book>().ToTable("Books").HasKey(x => x.Id);
@@ -87,7 +74,11 @@ namespace Bookstore.Data
                 .HasOne(oh => oh.Book)
                 .WithMany(b => b.OrderHistories)
                 .HasForeignKey(oh => oh.BookID);
-
+            // Configure one-to-one relationship
+            modelBuilder.Entity<OrderHistory>()
+                .HasOne(o => o.Detail)
+                .WithOne(d => d.OrderHistory)
+                .HasForeignKey<OrderDetail>(d => d.OrderHistoryId);
             // Configure relationships for Review entity
             modelBuilder.Entity<Review>()
                 .HasOne(r => r.Customer)
