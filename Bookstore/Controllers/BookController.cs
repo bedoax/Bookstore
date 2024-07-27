@@ -17,15 +17,14 @@ namespace Bookstore.Controllers
     {
         private readonly BookstoreDbContext _context;
         private readonly IMemoryCache _cache;
-        //private readonly ILogger _logger;
-        public BookController(BookstoreDbContext context, IMemoryCache cache)
+        private readonly ILogger<BookController> _logger;
+
+        public BookController(BookstoreDbContext context, IMemoryCache cache, ILogger<BookController> logger)
         {
             _context = context;
             _cache = cache;
-            //_logger = logger;
+            _logger = logger;
         }
-
-
 
         // GET: api/Books
         [HttpGet]
@@ -33,16 +32,21 @@ namespace Bookstore.Controllers
         public async Task<ActionResult<IEnumerable<Book>>> GetBooks()
         {
             var cacheKey = "books";
-            if(!_cache.TryGetValue(cacheKey,out List<Book> books))
+            if (!_cache.TryGetValue(cacheKey, out List<Book> books))
             {
+                _logger.LogInformation("Books not found in cache, fetching from database.");
                 books = await _context.Books.ToListAsync();
                 var cacheEntryOptions = new MemoryCacheEntryOptions
                 {
                     AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10)
                 };
-                _cache.Set(cacheKey, books,cacheEntryOptions);
-
+                _cache.Set(cacheKey, books, cacheEntryOptions);
             }
+            else
+            {
+                _logger.LogInformation("Books retrieved from cache.");
+            }
+
             return Ok(books);
         }
 
@@ -57,13 +61,16 @@ namespace Bookstore.Controllers
             }
 
             var books = await query.ToListAsync();
+            _logger.LogInformation("Retrieved {Count} available books.", books.Count);
             return Ok(books);
         }
+
         [HttpGet("GetBooksByPublishingYear")]
         public async Task<ActionResult<IEnumerable<Book>>> GetBooksByPublishingYear([FromQuery] int start, [FromQuery] int end)
         {
             if (start > end)
             {
+                _logger.LogWarning("Invalid year range: start year {Start} is greater than end year {End}.", start, end);
                 return BadRequest("The start year cannot be greater than the end year.");
             }
 
@@ -73,30 +80,31 @@ namespace Bookstore.Controllers
 
             if (books == null || !books.Any())
             {
+                _logger.LogInformation("No books found within the specified date range {Start} to {End}.", start, end);
                 return NotFound("No books found within the specified date range.");
             }
 
+            _logger.LogInformation("Retrieved {Count} books published between {Start} and {End}.", books.Count, start, end);
             return Ok(books);
         }
-
 
         [HttpGet("GetBooksByRatingsOfCustomer")]
         [Authorize(Roles = "Admin,Customer")]
         public async Task<ActionResult<IEnumerable<Book>>> GetBooksByRatings([FromQuery] int rate)
         {
-            //var reviews = _context.Reviews.Where(x => x.Rating == rate).Select(x=>x.BookID).ToListAsync();
-            //var books = _context.Books.FirstOrDefault(x => x.Id == reviews.Id).ToListAsync();
             var getBooksByRate = await (from b in _context.Books
                                         join r in _context.Reviews
                                         on b.Id equals r.BookID
                                         where r.Rating == rate
                                         select new { b.Title, r.Rating }).ToListAsync();
-            if (!getBooksByRate.Any() || getBooksByRate == null)
+            if (!getBooksByRate.Any())
             {
-                return BadRequest();
+                _logger.LogWarning("No books found with the specified rating {Rate}.", rate);
+                return NotFound("No books found with the specified rating.");
             }
-            return Ok(getBooksByRate);
 
+            _logger.LogInformation("Retrieved {Count} books with rating {Rate}.", getBooksByRate.Count, rate);
+            return Ok(getBooksByRate);
         }
 
         [HttpGet("SortBooks/{sortBy}/{descending}")]
@@ -107,23 +115,16 @@ namespace Bookstore.Controllers
             switch (sortBy.ToLower())
             {
                 case "price":
-                    query = descending ?
-                        query.OrderByDescending(b => b.Price) :
-                        query.OrderBy(b => b.Price);
+                    query = descending ? query.OrderByDescending(b => b.Price) : query.OrderBy(b => b.Price);
+                    _logger.LogInformation("Sorting books by price in {Order} order.", descending ? "descending" : "ascending");
                     break;
-
-                /*                case "rating":
-                    // Ensure your Book entity or a related entity can provide the average rating
-                    query = descending ?
-                        query.OrderByDescending(b => b.AverageRating) :
-                        query.OrderBy(b => b.AverageRating);
-                    break;*/
-
                 default:
+                    _logger.LogWarning("Invalid sort criteria: {SortBy}.", sortBy);
                     return BadRequest("Invalid sort criteria.");
             }
 
             var books = await query.ToListAsync();
+            _logger.LogInformation("Retrieved {Count} books sorted by {SortBy}.", books.Count, sortBy);
             return Ok(books);
         }
 
@@ -134,54 +135,52 @@ namespace Bookstore.Controllers
 
             if (string.IsNullOrEmpty(valueOfSearch))
             {
+                _logger.LogWarning("Search value cannot be empty.");
                 return BadRequest("Search value cannot be empty.");
             }
 
             switch (searchBy.ToLower())
             {
                 case "author":
-                    query = query.Where(b => b.Author.Name.Contains(valueOfSearch)); // Filter first
-                    query = descending ?
-                        query.OrderByDescending(b => b.Author.Name) :
-                        query.OrderBy(b => b.Author.Name);
+                    query = query.Where(b => b.Author.Name.Contains(valueOfSearch));
+                    query = descending ? query.OrderByDescending(b => b.Author.Name) : query.OrderBy(b => b.Author.Name);
+                    _logger.LogInformation("Searching books by author: {ValueOfSearch} in {Order} order.", valueOfSearch, descending ? "descending" : "ascending");
                     break;
-
                 case "category":
-                    query = query.Where(b => b.Category.CategoryName.Contains(valueOfSearch)); // Filter first
-                    query = descending ?
-                        query.OrderByDescending(b => b.Category.CategoryName) :
-                        query.OrderBy(b => b.Category.CategoryName);
+                    query = query.Where(b => b.Category.CategoryName.Contains(valueOfSearch));
+                    query = descending ? query.OrderByDescending(b => b.Category.CategoryName) : query.OrderBy(b => b.Category.CategoryName);
+                    _logger.LogInformation("Searching books by category: {ValueOfSearch} in {Order} order.", valueOfSearch, descending ? "descending" : "ascending");
                     break;
-
                 default:
+                    _logger.LogWarning("Invalid search criteria: {SearchBy}.", searchBy);
                     return BadRequest("Invalid search criteria.");
             }
 
             var books = await query.ToListAsync();
+            _logger.LogInformation("Retrieved {Count} books based on search criteria {SearchBy}.", books.Count, searchBy);
             return Ok(books);
         }
 
-
-
         [HttpGet("FullTextSearch")]
-        public async Task<ActionResult<IEnumerable<Book>>>FullTextSearch(
+        public async Task<ActionResult<IEnumerable<Book>>> FullTextSearch(
             [FromQuery] string searchTerm,
             [FromQuery] string sortBy = "Title",
             [FromQuery] bool descending = false,
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 10
-            )
+            [FromQuery] int pageSize = 10)
         {
             if (string.IsNullOrEmpty(searchTerm))
             {
-                return BadRequest("Search term cannot by empty.");
+                _logger.LogWarning("Search term cannot be empty.");
+                return BadRequest("Search term cannot be empty.");
             }
+
             IQueryable<Book> query = _context.Books
                 .Where(b => b.Title.Contains(searchTerm) ||
                             b.Description.Contains(searchTerm) ||
                             b.Author.Name.Contains(searchTerm) ||
                             b.Category.CategoryName.Contains(searchTerm));
-            // Sorting
+
             switch (sortBy.ToLower())
             {
                 case "title":
@@ -198,7 +197,6 @@ namespace Bookstore.Controllers
                     break;
             }
 
-            // Pagination
             var totalItems = await query.CountAsync();
             var books = await query
                 .Skip((page - 1) * pageSize)
@@ -213,26 +211,10 @@ namespace Bookstore.Controllers
                 Books = books
             };
 
+            _logger.LogInformation("Full text search returned {Count} books for search term {SearchTerm}.", books.Count, searchTerm);
             return Ok(result);
         }
 
-        /// <summary>
-        /// Advanced search for books with multiple filtering, sorting, and pagination options.
-        /// </summary>
-        /// <param name="author">Filter by author's name (partial match).</param>
-        /// <param name="category">Filter by category name (partial match).</param>
-        /// <param name="minPrice">Filter by minimum price.</param>
-        /// <param name="maxPrice">Filter by maximum price.</param>
-        /// <param name="minRating">Filter by minimum rating.</param>
-        /// <param name="maxRating">Filter by maximum rating.</param>
-        /// <param name="startYear">Filter by start year.</param>
-        /// <param name="endYear">Filter by end year.</param>
-        /// <param name="inStock">Give To use option for show item in stock or not.</param>
-        /// <param name="sortBy">Field to sort by (e.g., "Title", "Price", "Rating").</param>
-        /// <param name="descending">Sort in descending order if true; otherwise, ascending.</param>
-        /// <param name="page">Page number for pagination (starting at 1).</param>
-        /// <param name="pageSize">Number of items per page for pagination.</param>
-        /// <returns>Paginated list of books matching the search criteria.</returns>
         [HttpGet("AdvancedSearch")]
         public async Task<ActionResult<IEnumerable<Book>>> AdvancedSearch(
             [FromQuery] string author = null,
@@ -271,23 +253,22 @@ namespace Bookstore.Controllers
 
             if (minRating.HasValue)
             {
-                query = query.Where(b => b.Reviews.Any(r => r.Rating >= minRating.Value));
+                query = query.Where(b => b.Reviews.Average(r => r.Rating) >= minRating.Value);
             }
 
             if (maxRating.HasValue)
             {
-                query = query.Where(b => b.Reviews.Any(r => r.Rating <= maxRating.Value));
+                query = query.Where(b => b.Reviews.Average(r => r.Rating) <= maxRating.Value);
             }
 
             if (!string.IsNullOrEmpty(searchText))
             {
-                searchText = searchText.ToLower(); // Normalize the search text
-                query = query.Where(b => b.Title.ToLower().Contains(searchText) ||
-                                         b.Description.ToLower().Contains(searchText) ||
-                                         b.Author.Name.ToLower().Contains(searchText));
+                query = query.Where(b => b.Title.Contains(searchText) ||
+                                          b.Description.Contains(searchText) ||
+                                          b.Author.Name.Contains(searchText) ||
+                                          b.Category.CategoryName.Contains(searchText));
             }
 
-            // Sorting
             switch (sortBy.ToLower())
             {
                 case "title":
@@ -304,7 +285,6 @@ namespace Bookstore.Controllers
                     break;
             }
 
-            // Pagination
             var totalItems = await query.CountAsync();
             var books = await query
                 .Skip((page - 1) * pageSize)
@@ -319,6 +299,7 @@ namespace Bookstore.Controllers
                 Books = books
             };
 
+            _logger.LogInformation("Advanced search returned {Count} books with the specified criteria.", books.Count);
             return Ok(result);
         }
 
@@ -401,7 +382,7 @@ namespace Bookstore.Controllers
             }
             if (!ModelState.IsValid)
             {
-                //_logger.LogWarning("Invalid model state for book: {@Book}", book);
+                _logger.LogWarning("Invalid model state for book: {@Book}", book);
                 return BadRequest(ModelState); // Return validation errors
             }
             _context.Entry(book).State = EntityState.Modified;
@@ -433,7 +414,7 @@ namespace Bookstore.Controllers
             book.Id = 0;
             if (!ModelState.IsValid)
             {
-                //_logger.LogWarning("Invalid model state for book: {@Book}", book);
+                _logger.LogWarning("Invalid model state for book: {@Book}", book);
                 return BadRequest(ModelState); // Return validation errors
             }
             _context.Books.Add(book);
